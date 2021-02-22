@@ -1,0 +1,44 @@
+version: "3.7"
+services:
+  reverse-proxy:
+    image: traefik:2.3 # The official Traefik docker image
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entryPoints.web.forwardedHeaders.insecure
+    ports:
+      - "80:80" # The HTTP port
+      - "8888:8080" # The Web UI (enabled by --api)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # So that Traefik can listen to the Docker events
+
+  demo:
+    image: nginx
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.demo.rule=Host(`demo.${DOMAIN}`)"
+      - "traefik.http.services.demo.loadbalancer.server.port=80"
+      #  - "traefik.http.services.demo.loadbalancer.passhostheader=false"
+      - "traefik.http.middlewares.auth.forwardauth.address=http://auth.${DOMAIN}/auth"
+      - "traefik.http.middlewares.auth.forwardauth.authResponseHeaders=X-Forwarded-User"
+      - "traefik.http.middlewares.auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.routers.demo.middlewares=auth@docker"
+
+  server:
+    build: .
+    command: npm start
+    volumes:
+      - .:/app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=3000"
+    #      - "traefik.http.services.auth.loadbalancer.passhostheader=false"
+    environment:
+      - GITHUB_SCOPE=user:email,read:user,read:org
+      - OAUTH_JWT_REFRESH_SECRET=zyx456
+      - FQDN=http://auth.${DOMAIN}
+      - SCOPE=${DOMAIN}
+      - GITHUB_DEFAULT_ORG=noorg
